@@ -33,8 +33,8 @@ export class SessionManager {
     // Validate cwd against allowed paths
     this.validatePath(options.cwd);
 
-    const terminal = await createTerminal(options);
     const id = randomUUID().slice(0, 8);
+    const terminal = await createTerminal({ ...options, sessionId: id });
     const session: Session = {
       id,
       name: options.name ?? `${options.command}-${id}`,

@@ -47,5 +47,6 @@ export async function handleCreateSession(
     session_id: session.id,
     name: session.name,
     pid: session.pid,
+    tmux_session: session.terminal.tmuxSession,
   };
 }

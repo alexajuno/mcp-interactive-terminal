@@ -76,6 +76,7 @@ export interface TerminalWrapper {
   isAlive: boolean;
   promptPattern: RegExp | null;
   mode: "pty" | "pipe";
+  tmuxSession?: string;
   write(data: string): void;
   readScreen(fullScreen?: boolean): string;
   waitForOutput(timeoutMs: number): Promise<{ output: string; isComplete: boolean }>;
@@ -100,6 +101,7 @@ export interface CreateSessionOutput {
   session_id: string;
   name: string;
   pid: number;
+  tmux_session?: string;
 }
 
 export interface SendCommandInput {

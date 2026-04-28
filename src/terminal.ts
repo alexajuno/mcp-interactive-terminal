@@ -9,7 +9,7 @@
  * provides working interactive sessions in Claude Code's sandbox.
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import type { TerminalWrapper } from "./types.js";
 import { detectPromptPattern, endsWithPrompt } from "./utils/output-detector.js";
 import { stripAnsi } from "./utils/sanitizer.js";
@@ -24,6 +24,19 @@ export interface TerminalOptions {
   env?: Record<string, string>;
   cols?: number;
   rows?: number;
+  sessionId?: string;
+}
+
+function tmuxEnabled(): boolean {
+  return process.env.MCP_TERMINAL_USE_TMUX === "1";
+}
+
+function killTmuxSession(name: string): void {
+  try {
+    spawnSync("tmux", ["kill-session", "-t", name], { stdio: "ignore" });
+  } catch {
+    // Ignore — session may already be gone
+  }
 }
 
 /**
@@ -50,7 +63,21 @@ async function createPtyTerminal(options: TerminalOptions): Promise<TerminalWrap
   const rows = options.rows ?? 40;
   const xterm = new Terminal({ cols, rows, scrollback: 1000, allowProposedApi: true });
 
-  const ptyProcess = pty.spawn(options.command, options.args ?? [], {
+  // Optionally wrap the spawn in a tmux session so an external user can
+  // `tmux attach -t <name> -r` to watch the session live.
+  let spawnCommand = options.command;
+  let spawnArgs = options.args ?? [];
+  let tmuxSession: string | undefined;
+  if (tmuxEnabled()) {
+    tmuxSession = `mcp-${options.sessionId ?? Math.random().toString(36).slice(2, 10)}`;
+    spawnCommand = "tmux";
+    spawnArgs = ["new-session", "-A", "-s", tmuxSession, options.command, ...(options.args ?? [])];
+    console.error(
+      `[mcp-terminal] tmux session: ${tmuxSession} — attach with: tmux attach -t ${tmuxSession} -r`
+    );
+  }
+
+  const ptyProcess = pty.spawn(spawnCommand, spawnArgs, {
     name: "xterm-256color",
     cols,
     rows,
@@ -79,6 +106,7 @@ async function createPtyTerminal(options: TerminalOptions): Promise<TerminalWrap
     get isAlive() { return isAlive; },
     promptPattern,
     mode: "pty",
+    tmuxSession,
 
     write(data: string) {
       if (!isAlive) throw new Error("Session is not alive");
@@ -116,10 +144,12 @@ async function createPtyTerminal(options: TerminalOptions): Promise<TerminalWrap
 
     kill(signal?: string) {
       if (isAlive) { ptyProcess.kill(signal); isAlive = false; }
+      if (tmuxSession) killTmuxSession(tmuxSession);
     },
 
     dispose() {
       if (isAlive) { ptyProcess.kill(); isAlive = false; }
+      if (tmuxSession) killTmuxSession(tmuxSession);
       xterm.dispose();
     },
   };
